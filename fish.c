@@ -57,8 +57,7 @@ int str2num(char* t)
 }
 
 char* toString(struct Card t){
-	char s[256];
-	char *ss;
+	static char s[256];
 	s[2]=0;
 	switch(t.type){
 		case SPADE: s[0]='S'; break;
@@ -75,8 +74,7 @@ char* toString(struct Card t){
 		case 14: s[1]='A'; break;
 		default: s[1]=t.value+'0';
 	}
-	strcpy(ss,s);
-	return ss;
+	return s;
 }
 
 void initProcess(int n)
@@ -84,12 +82,12 @@ void initProcess(int n)
 	int i,tpid;
 	for(i = 1; i <= n; i ++){
 		if(pipe(fd[i]) != 0){
-			printf("[ERROR] Pipe failed.");
+			printf("[ERROR] Pipe failed.\n");
 			exit(1);
 		}
 		tpid = fork();
 		if(tpid < 0){
-			printf("[ERROR] Fork failed.");
+			printf("[ERROR] Fork failed.\n");
 			exit(1);
 		}
 		if(tpid == 0){//Child process
@@ -113,7 +111,6 @@ void initProcess(int n)
 
 void readCards()
 {
-	//printf("read cds\n");
     char t[256];
     int i;
     for(i=0;~scanf("%s",t);i++){
@@ -183,11 +180,9 @@ void getHand()
 			exit(1);
 		}
 		hand[i] = t.card;
-		printf("card %d\n",hand[i].value);
+		//printf("card %d\n",hand[i].value);
 	}
-	printf("C");
 	sortHand();
-	printf("C");
 	printf("Child %d, pid %d: initial hand <", number, pid);
 	for(i = 0; i < handcount-1; i++)
 	{
@@ -203,7 +198,6 @@ int main(int argc,char* argv[])
 	countc = str2num(argv[1]);
 	handcount = countc <= 4 ? 7 : 5;
     initProcess(countc);
-    //printf("%d,%d:%d\n",number,getpid(),getppid());
     if(ppid == -1){
     	readCards();
     	deal();
@@ -213,9 +207,9 @@ int main(int argc,char* argv[])
     }
     else{
     	getHand();
+    	return 0;
     }
     for(i = 1; i <= countc; i++) wait(cpid[i]);
-    sleep(3);
     return 0;
 }
 
