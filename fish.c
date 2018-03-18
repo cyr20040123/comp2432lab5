@@ -57,13 +57,15 @@ int str2num(char* t)
 }
 
 char* toString(struct Card t){
-	char s[3];
-	s[3]=0;
+	char s[256];
+	char *ss;
+	s[2]=0;
 	switch(t.type){
 		case SPADE: s[0]='S'; break;
 		case HEART: s[0]='H'; break;
 		case CLUB: s[0]='C'; break;
 		case DIAMOND: s[0]='D'; break;
+		default: s[0]='X';
 	}
 	switch(t.value){
 		case 10: s[1]='T'; break;
@@ -73,42 +75,52 @@ char* toString(struct Card t){
 		case 14: s[1]='A'; break;
 		default: s[1]=t.value+'0';
 	}
-	return s;
-}
-
-void readCards()
-{
-    char t[256];
-    int i;
-    for(i=0;scanf("%s",t)==2;i++){
-        strcpy(a[i],t);
-    }
-    return;
+	strcpy(ss,s);
+	return ss;
 }
 
 void initProcess(int n)
 {
 	int i,tpid;
-	for(i=1;i<=n;i++){
-		if(pipe(fd[i])!=0){
+	for(i = 1; i <= n; i ++){
+		if(pipe(fd[i]) != 0){
 			printf("[ERROR] Pipe failed.");
 			exit(1);
 		}
-		tpid=fork();
-		if(tpid==0){//Child process
-			ppid=getppid();
-			number=i;
+		tpid = fork();
+		if(tpid < 0){
+			printf("[ERROR] Fork failed.");
+			exit(1);
+		}
+		if(tpid == 0){//Child process
+			pid = getpid();
+			ppid = getppid();
+			number = i;
 			initrand(number);
 			close(fd[number][1]);//1 for out
+			printf("child %i created\n",i);
 			return;
 		}
 		else{//Parent process
-			ppid=-1;
-			number=0;
-			cpid[i]=tpid;
-			close(fd[number][0]);//0 for in
+			ppid = -1;
+			number = 0;
+			cpid[i] = tpid;
+			close(fd[i][0]);//0 for in
 		}
 	}
+    return;
+}
+
+void readCards()
+{
+	//printf("read cds\n");
+    char t[256];
+    int i;
+    for(i=0;~scanf("%s",t);i++){
+    	if(strlen(t)!=2)break;
+        strcpy(a[i],t);
+    }
+    printf("%d cards read.\n",i);
     return;
 }
 
@@ -116,10 +128,9 @@ void deal()
 {
 	int i,j;
 	struct Message tm;
-	tm.code = DEAL;
+	tm.code = p_DEAL;
 	nextcard = 0;
-	if(countc <= 4) j = 7;
-	else j = 5;
+	j = handcount;
 	while(j--){
 		for(i = 1; i <= countc; i ++){
 			switch(a[nextcard][0]){
@@ -138,19 +149,18 @@ void deal()
 				default: tm.card.value = a[nextcard][1]-'0';
 			}
 			nextcard++;
-			write(fd[i][1], tm, sizeof(tm));
+			write(fd[i][1], &tm, sizeof(tm));
 		}
 	}
 	return;
 }
 
-void sorthand()
+void sortHand()
 {
-	int i,j,handcards;
+	int i,j;
 	struct Card t;
-	handcards = countc <= 4 ? 5 : 7;
-	for(i = 0; i < handcards - 1; i++) {
-		for(j = i+1; j < handcards; j++) {
+	for(i = 0; i < handcount - 1; i++) {
+		for(j = i+1; j < handcount; j++) {
 			if (hand[i].value * 10000 + hand[i].type < hand[j].value * 10000 + hand[j].type)
 			{
 				t = hand[i];
@@ -162,23 +172,28 @@ void sorthand()
 	return ;
 }
 
-void gethand()
+void getHand()
 {
 	int i, tlen;
 	struct Message t;
 	i = handcount;
 	while(i--){
-		if(tlen = read(fd[number][0], t, sizeof(struct Message)) != sizeof(struct Message)){
-			printf("[ERROR] Error in get hand (read).\n");
+		if(tlen = read(fd[number][0], &t, sizeof(struct Message)) != sizeof(struct Message)){
+			printf("[ERROR] Error in get hand (read): t.code = %d, len = %d\n",t.code,tlen);
 			exit(1);
 		}
 		hand[i] = t.card;
+		printf("card %d\n",hand[i].value);
 	}
-	sorthand();
-   	printf("Child %d, pid %d: initial hand <", count, pid);
-   	for(i = 0; i < handcount-1; i++)
-   		printf("%s ",toString(hand[i]));
-   	printf("%s>\n",toString(hand[i]));
+	printf("C");
+	sortHand();
+	printf("C");
+	printf("Child %d, pid %d: initial hand <", number, pid);
+	for(i = 0; i < handcount-1; i++)
+	{
+		printf("%s ",toString(hand[i]));
+	}
+	printf("%s>\n",toString(hand[i]));
 	return ;
 }
 
@@ -186,18 +201,21 @@ int main(int argc,char* argv[])
 {
 	int i;
 	countc = str2num(argv[1]);
-	handcount = countc <= 4 ? 5 : 7;
+	handcount = countc <= 4 ? 7 : 5;
     initProcess(countc);
+    //printf("%d,%d:%d\n",number,getpid(),getppid());
     if(ppid == -1){
+    	readCards();
     	deal();
     	printf("Parent: the child players are");
     	for(i = 1; i <= countc; i++) printf(" %d",cpid[i]);
     	printf("\n");
     }
     else{
-    	gethand();
+    	getHand();
     }
-    wait(NULL);
+    for(i = 1; i <= countc; i++) wait(cpid[i]);
+    sleep(3);
     return 0;
 }
 
