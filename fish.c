@@ -20,7 +20,7 @@
 #define CLUB 200
 #define DIAMOND 100
 
-int pid,ppid,fd[100][2],cpid[100],number,countc;
+int pid,ppid,fd[100][2],cpid[100],number,countc,handcount;
 char a[1000][256];
 int nextcard;
 int seed;
@@ -29,6 +29,7 @@ struct Card{
 	int type;
 	int value;
 }hand[7];
+
 struct Message{
 	int code;
 	int person;
@@ -53,6 +54,26 @@ int str2num(char* t)
         s+=t[i]-'0';
     }
     return s;
+}
+
+char* toString(struct Card t){
+	char s[3];
+	s[3]=0;
+	switch(t.type){
+		case SPADE: s[0]='S'; break;
+		case HEART: s[0]='H'; break;
+		case CLUB: s[0]='C'; break;
+		case DIAMOND: s[0]='D'; break;
+	}
+	switch(t.value){
+		case 10: s[1]='T'; break;
+		case 11: s[1]='J'; break;
+		case 12: s[1]='Q'; break;
+		case 13: s[1]='K'; break;
+		case 14: s[1]='A'; break;
+		default: s[1]=t.value+'0';
+	}
+	return s;
 }
 
 void readCards()
@@ -128,8 +149,8 @@ void sorthand()
 	int i,j,handcards;
 	struct Card t;
 	handcards = countc <= 4 ? 5 : 7;
-	for(i = 0; i < handcards - 1; i++){
-		for(j = i+1; j < handcards; j++){
+	for(i = 0; i < handcards - 1; i++) {
+		for(j = i+1; j < handcards; j++) {
 			if (hand[i].value * 10000 + hand[i].type < hand[j].value * 10000 + hand[j].type)
 			{
 				t = hand[i];
@@ -143,26 +164,40 @@ void sorthand()
 
 void gethand()
 {
-	int i;
-	i = countc <= 4 ? 5 : 7;
+	int i, tlen;
+	struct Message t;
+	i = handcount;
 	while(i--){
-		
+		if(tlen = read(fd[number][0], t, sizeof(struct Message)) != sizeof(struct Message)){
+			printf("[ERROR] Error in get hand (read).\n");
+			exit(1);
+		}
+		hand[i] = t.card;
 	}
+	sorthand();
+   	printf("Child %d, pid %d: initial hand <", count, pid);
+   	for(i = 0; i < handcount-1; i++)
+   		printf("%s ",toString(hand[i]));
+   	printf("%s>\n",toString(hand[i]));
+	return ;
 }
 
 int main(int argc,char* argv[])
 {
 	int i;
-	countc=str2num(argv[1]);
+	countc = str2num(argv[1]);
+	handcount = countc <= 4 ? 5 : 7;
     initProcess(countc);
-    if(ppid==-1){
+    if(ppid == -1){
     	deal();
     	printf("Parent: the child players are");
-    	for(i=1;i<=countc;i++) printf(" %d",cpid[i]);
+    	for(i = 1; i <= countc; i++) printf(" %d",cpid[i]);
     	printf("\n");
     }
     else{
-    	
+    	gethand();
     }
+    wait(NULL);
     return 0;
 }
+
