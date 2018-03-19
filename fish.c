@@ -77,6 +77,11 @@ char* toString(struct Card t){
 	return s;
 }
 
+void printInfo(char* command)
+{
+	printf("Child %d, pid %d: %s ", number, pid, command);
+}
+
 void initProcess(int n)
 {
 	int i,tpid;
@@ -95,7 +100,7 @@ void initProcess(int n)
 			ppid = getppid();
 			number = i;
 			initrand(number);
-			close(fd[number][1]);//1 for out
+			//close(fd[number][1]);//1 for out
 			printf("child %i created\n",i);
 			return;
 		}
@@ -103,7 +108,7 @@ void initProcess(int n)
 			ppid = -1;
 			number = 0;
 			cpid[i] = tpid;
-			close(fd[i][0]);//0 for in
+			//close(fd[i][0]);//0 for in
 		}
 	}
     return;
@@ -169,6 +174,36 @@ void sortHand()
 	return ;
 }
 
+void printHand()
+{
+	int i;
+	printf("<");
+	for(i = 0; i < handcount-1; i++)
+	{
+		printf("%s ",toString(hand[i]));
+	}
+	printf("%s>\n",toString(hand[i]));
+	return ;
+}
+
+void reduceHand()
+{
+	int i = 0, j = 0, ohandcount = handcount;
+	for(i = 0; i < ohandcount; i++){
+		if (i < ohandcount - 1 && hand[i].value == hand[i+1].value){
+			handcount-=2;
+			i+=1;
+			continue;
+		}
+		hand[j++] = hand[i];
+	}
+	if(ohandcount != handcount){
+		printInfo("reduced hand");
+		printHand();
+	}
+	return ;
+}
+
 void getHand()
 {
 	int i, tlen;
@@ -183,12 +218,24 @@ void getHand()
 		//printf("card %d\n",hand[i].value);
 	}
 	sortHand();
-	printf("Child %d, pid %d: initial hand <", number, pid);
-	for(i = 0; i < handcount-1; i++)
-	{
-		printf("%s ",toString(hand[i]));
-	}
-	printf("%s>\n",toString(hand[i]));
+	//printf("Child %d, pid %d: initial hand ", number, pid);
+	printInfo("initial hand");
+	printHand();
+	reduceHand();
+	return ;
+}
+
+void waitForSignal()
+{
+	//check handcount
+	return ;
+}
+
+void gameStart()
+{
+	int status[200],i;
+	for(i = 1; i <= countc; i++) status[i] = 1;
+	
 	return ;
 }
 
@@ -204,9 +251,11 @@ int main(int argc,char* argv[])
     	printf("Parent: the child players are");
     	for(i = 1; i <= countc; i++) printf(" %d",cpid[i]);
     	printf("\n");
+    	gameStart();
     }
     else{
     	getHand();
+    	waitForSignal();
     	return 0;
     }
     for(i = 1; i <= countc; i++) wait(cpid[i]);
