@@ -15,15 +15,23 @@
 #define p_FISH 1051
 #define p_NOMOREFISH 1052
 #define c_FINISHED 10000
+#define p_FINISHED 10001
 
 #define SPADE 400
 #define HEART 300
 #define CLUB 200
 #define DIAMOND 100
 
-int pid,ppid,fd[100][2],cpid[100],number,countc,handcount;
+#define READ 0
+#define WRITE 1
+#define PARENT 0
+#define CHILD 1
+//fd[number][P/C][R/W]
+
+int pid,ppid,fd[100][2][2],cpid[100],number,countc,handcount;
 char a[1000][256];
 int nextcard,totalcards,paircount=0;
+int status[200], playeronline;
 int seed;
 
 struct Card{
@@ -87,7 +95,7 @@ void initProcess(int n)
 {
 	int i,tpid;
 	for(i = 1; i <= n; i ++){
-		if(pipe(fd[i]) != 0){
+		if(pipe(fd[i][PARENT]) != 0 || pipe(fd[i][CHILD]) != 0){
 			printf("[ERROR] Pipe failed.\n");
 			exit(1);
 		}
@@ -101,7 +109,7 @@ void initProcess(int n)
 			ppid = getppid();
 			number = i;
 			initrand(number);
-			//close(fd[number][1]);//1 for out
+			close(fd[number][PARENT][WRITE]);//1 for out
 			printf("child %i created\n",i);
 			return;
 		}
@@ -109,7 +117,7 @@ void initProcess(int n)
 			ppid = -1;
 			number = 0;
 			cpid[i] = tpid;
-			//close(fd[i][0]);//0 for in
+			close(fd[i][CHILD][WRITE]);//0 for in
 		}
 	}
     return;
@@ -153,7 +161,7 @@ void deal()
 				default: tm.card.value = a[nextcard][1]-'0';
 			}
 			nextcard++;
-			write(fd[i][1], &tm, sizeof(tm));
+			write(fd[i][PARENT][WRITE], &tm, sizeof(tm));
 		}
 	}
 	return;
@@ -214,15 +222,13 @@ void getHand()
 	struct Message t;
 	i = handcount;
 	while(i--){
-		if(tlen = read(fd[number][0], &t, sizeof(struct Message)) != sizeof(struct Message)){
+		if(tlen = read(fd[number][PARENT][READ], &t, sizeof(struct Message)) != sizeof(struct Message)){
 			printf("[ERROR] Error in get hand (read): t.code = %d, len = %d\n",t.code,tlen);
 			exit(1);
 		}
 		hand[i] = t.card;
-		//printf("card %d\n",hand[i].value);
 	}
 	sortHand();
-	//printf("Child %d, pid %d: initial hand ", number, pid);
 	printInfo("initial hand");
 	printHand();
 	reduceHand();
@@ -231,29 +237,45 @@ void getHand()
 
 void waitForSignal()
 {
-	int timesout = 100000, who, tcard;
+	int timesout = 100000, who, tcard, i;
 	struct Message msgIn, msgOut;
 	while(timesout--){
-		if(read(fd[number][0], &msgIn, sizeof(struct Message)) != sizeof(struct Message)){
+		if(read(fd[number][PARENT][READ], &msgIn, sizeof(struct Message)) != sizeof(struct Message)){
 			printf("[ERROR] Error in read message, child %d.\n",number);
 			exit(1);
 		}
 		switch(msgIn.code){
+			case p_FINISHED:
+				status[msgIn.person] = 0;
+				playeronline --;
+				break;
 			case p_TOPLAY:
 				printInfo("my hand");
 				printHand();
+				if(playeronline <= 1){
+					msgOut.code = c_GOFISH;
+					read(fd[number][PARENT][READ], &msgIn, sizeof(struct Message));
+					printInfo("only me, go fish directly, drawn %s\n",toString(msgIn.card));
+				}
 				who = myrand();
 				tcard = myrand();
+				msgOut.code = c_REQUESTING;
+				msgOut.card = hand[tcard % handcount];
+				for(i = 1, j = 1; i <= countc && j != who % playeronline; i ++){
+					if(status[i] && i != number) j++;
+				}
+				
+				
 				msgOut.code = c_REQUESTPERSON;
 				msgOut.person = who;
 				//msgOut.card = hand[tcard % handcount];
-				write(fd[number][1], &msgOut, sizeof(struct Message));
-				read(fd[number][0], &msgIn, sizeof(struct Message));
+				write(fd[number][CHILD][WRITE], &msgOut, sizeof(struct Message));
+				read(fd[number][PARENT][READ], &msgIn, sizeof(struct Message));
 				if(msgIn.person <= 0){
 					//no other player left
 					msgOut.code = c_GOFISH;
-					write(fd[number][1], &msgOut, sizeof(struct Message));
-					read(fd[number][0], &msgIn, sizeof(struct Message));
+					write(fd[number][CHILD][WRITE], &msgOut, sizeof(struct Message));
+					read(fd[number][CHILD][READ], &msgIn, sizeof(struct Message));
 					if(msgIn.code == p_NOMOREFISH){/*end*/;}
 					else{
 						printInfo("only me, go fish directly, drawn %s\n",toString(msgIn.card));
@@ -265,8 +287,25 @@ void waitForSignal()
 					msgOut.code = c_REQUESTING;
 					msgOut.person = msgIn.person;
 					msgOut.card = hand[tcard % handcount];
-					write(fd[number][1], &msgOut, sizeof(struct Message));
-					read(fd[number][0], &msgIn, sizeof(struct Message));
+					write(fd[number][CHILD][WRITE], &msgOut, sizeof(struct Message));
+					read(fd[number][PARENT][READ], &msgIn, sizeof(struct Message));
+					switch(msgIn.code){//////
+						case p_FISH:
+							printInfo("drawn");
+							printf(" %s\n",toString(msgIn.card));
+							hand[handcount++] = msgIn.card;
+							break;
+						case p_YOURCARD:
+							printInfo("receive");
+							printf(" %s from child %d\n", toString(msgIn.card), msgOut.person);
+							hand[handcount++] = msgIn.card;
+							break;
+						case p_NOMOREFISH:
+							break;
+						default:
+							printf("[ERROR] Invalid state after requesting.\n");
+							exit(1);
+					}
 					//fish or yourcard or NOMOREFISH
 					////
 				}
@@ -297,9 +336,8 @@ void waitForSignal()
 
 void gameStart()
 {
-	int status[200], i, playerleft = countc;
+	int i, playerleft = countc;
 	struct Message msgIn, msgOut;
-	for(i = 1; i <= countc; i++) status[i] = 1;
 	i = 0;
 	while(nextcard != totalcards && playerleft > 0)
 	{
@@ -307,7 +345,7 @@ void gameStart()
 			i = i % countc + 1;
 		}while(status[i] != 1);
 		msgOut.code = p_TOPLAY;
-		write(fd[i][1], &msgOut, sizeof(msg));
+		write(fd[i][PARENT][WRITE], &msgOut, sizeof(msg));
 		
 	}
 	return ;
@@ -318,6 +356,8 @@ int main(int argc,char* argv[])
 	int i;
 	countc = str2num(argv[1]);
 	handcount = countc <= 4 ? 7 : 5;
+	for(i = 1; i <= countc; i++) status[i] = 1;
+	playeronline = countc;
     initProcess(countc);
     if(ppid == -1){
     	readCards();
